@@ -1,6 +1,8 @@
-# Game MCP Proof of Concept - Tic-Tac-Toe
+# Tic-Tac-Toe MCP Game
 
-A tic-tac-toe game implementing the **Model Context Protocol (MCP)** to enable AI agents like Claude Code to play games via a standardized tool interface.
+A dual-interface tic-tac-toe game implementing the **Model Context Protocol (MCP)** to enable AI agents like Claude Code to play games via a standardized tool interface.
+
+![Game Screenshot](./images/screenshot.png)
 
 ## 🎯 Project Status: MCP Server Complete ✅
 
@@ -14,11 +16,64 @@ A tic-tac-toe game implementing the **Model Context Protocol (MCP)** to enable A
 - ✅ MCP server binary with stdio transport
 - ✅ Comprehensive test coverage (79 unit + 12 integration tests)
 - ✅ Manual CLI testing validated
+- ✅ Yew/WASM frontend UI with hot-reload development
 
 ### What's Pending
 - ⏭️ End-to-end testing with actual Claude Code instance
 - 🔄 REST API backend (for web UI)
-- 🔄 Yew/WASM frontend UI
+
+## 🚀 Quick Start
+
+### Development Mode
+```bash
+./scripts/dev.sh
+```
+Starts both servers with hot-reload:
+- Backend API + MCP server: http://localhost:3000
+- Frontend dev server: http://localhost:8080
+
+### Production Build
+```bash
+./scripts/build.sh
+```
+Builds optimized backend binary and frontend WASM assets.
+
+### Production Server
+```bash
+./scripts/serve.sh
+```
+Runs production server (serves both API and static frontend).
+
+### Run Tests
+
+```bash
+# All tests (94 tests)
+cargo test --all
+
+# Just unit tests
+cargo test --lib
+
+# Just integration tests
+cargo test --test mcp_integration
+
+# WASM tests (requires wasm-pack)
+cd frontend
+wasm-pack test --headless --firefox
+
+# With output
+cargo test -- --nocapture
+```
+
+### Manual Testing
+
+```bash
+# Using the test script (recommended)
+./test-mcp-manual.sh
+
+# Or test individual tools
+echo '{"jsonrpc":"2.0","id":1,"method":"view_game_state","params":{}}' | \
+  target/release/game-mcp-server 2>/dev/null | python3 -m json.tool
+```
 
 ## 🏗️ Architecture
 
@@ -49,6 +104,14 @@ A tic-tac-toe game implementing the **Model Context Protocol (MCP)** to enable A
 │  │  • Taunts table (AI messages to player)    │    │
 │  └────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────┘
+         ▲                                     ▲
+         │                                     │
+         │ REST API                            │
+         │                                     │
+┌────────┴─────────┐                 ┌─────────┴────────┐
+│   Browser (UI)   │                 │   AI Agent (MCP) │
+│   (Yew/WASM)     │                 │   (Claude Code)  │
+└──────────────────┘                 └──────────────────┘
 ```
 
 ## 📦 Project Structure
@@ -74,7 +137,8 @@ game-mcp-poc/
 │   ├── tests/
 │   │   └── mcp_integration.rs         # Integration tests
 │   └── Cargo.toml
-├── frontend/              # Yew/WASM frontend (stub)
+├── frontend/              # Yew/WASM frontend
+│   └── src/lib.rs         # Yew components
 ├── shared/                # Shared types (Player, Cell, GameState, etc.)
 ├── docs/                  # Comprehensive documentation
 │   ├── architecture.md
@@ -82,52 +146,11 @@ game-mcp-poc/
 │   ├── design.md
 │   ├── mcp-setup-and-testing.md
 │   └── status.md
+├── scripts/               # Build and dev scripts
+│   ├── dev.sh            # Development mode with hot-reload
+│   ├── build.sh          # Production build
+│   └── serve.sh          # Production server
 └── test-mcp-manual.sh     # Manual testing script
-```
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Rust 2024 edition (stable)
-- SQLite 3
-
-### Build the MCP Server
-
-```bash
-# Development build
-cargo build
-
-# Release build (recommended)
-cargo build --release
-```
-
-Binary location: `target/release/game-mcp-server`
-
-### Run Tests
-
-```bash
-# All tests (94 tests)
-cargo test --all
-
-# Just unit tests
-cargo test --lib
-
-# Just integration tests
-cargo test --test mcp_integration
-
-# With output
-cargo test -- --nocapture
-```
-
-### Manual Testing
-
-```bash
-# Using the test script (recommended)
-./test-mcp-manual.sh
-
-# Or test individual tools
-echo '{"jsonrpc":"2.0","id":1,"method":"view_game_state","params":{}}' | \
-  target/release/game-mcp-server 2>/dev/null | python3 -m json.tool
 ```
 
 ## 🎮 MCP Tools
@@ -258,15 +281,14 @@ After configuration, restart Claude Code to load the MCP server.
 - **CLI Script** (`test-mcp-manual.sh`): Tests all 6 tools with visual output
 - **All tests passing** ✅
 
-## 📝 Documentation
-
-- **[Architecture](docs/architecture.md)**: System design and component overview
-- **[PRD](docs/prd.md)**: Product requirements and user stories
-- **[Design](docs/design.md)**: Detailed module structure and API specs
-- **[MCP Setup](docs/mcp-setup-and-testing.md)**: Claude Code configuration guide
-- **[Status](docs/status.md)**: Current project status and metrics
-
 ## 🛠️ Development
+
+### Prerequisites
+- Rust 2024 edition (stable)
+- SQLite 3
+- `trunk` (auto-installed by build scripts)
+- `wasm-bindgen-cli` (auto-installed by build scripts)
+- `wasm32-unknown-unknown` target (auto-added by scripts)
 
 ### Code Quality
 
@@ -341,6 +363,7 @@ Use the manual testing script with verbose output:
 - ✅ **All 6 MCP tools** working correctly
 - ✅ **Comprehensive integration testing** with Mock AI
 - ✅ **Production-ready code quality** (rustfmt + clippy clean)
+- ✅ **Yew/WASM frontend** with beautiful UI
 
 ## 📈 Metrics
 
@@ -360,21 +383,30 @@ Use the manual testing script with verbose output:
 - [x] Integration tests
 - [x] Manual testing
 
-### Phase 2: Integration Testing ⏭️ **NEXT**
+### Phase 2: Frontend UI ✅ **COMPLETE**
+- [x] Yew components (board, status, log)
+- [x] WebAssembly build
+- [x] Development scripts with hot-reload
+
+### Phase 3: Integration Testing ⏭️ **NEXT**
 - [ ] Test with actual Claude Code instance
 - [ ] Document any edge cases found
 - [ ] Iterate based on feedback
 
-### Phase 3: REST API 🔄 **PLANNED**
+### Phase 4: REST API 🔄 **PLANNED**
 - [ ] Axum web server
 - [ ] Route definitions
 - [ ] Static file serving
 - [ ] API tests
 
-### Phase 4: Frontend UI 🔄 **PLANNED**
-- [ ] Yew components (board, status, log)
-- [ ] WebAssembly build
-- [ ] UI integration tests
+## 📝 Documentation
+
+- **[Architecture](docs/architecture.md)**: System design and component overview
+- **[PRD](docs/prd.md)**: Product requirements and user stories
+- **[Design](docs/design.md)**: Detailed module structure and API specs
+- **[MCP Setup](docs/mcp-setup-and-testing.md)**: Claude Code configuration guide
+- **[Status](docs/status.md)**: Current project status and metrics
+- **[Process](docs/process.md)**: TDD and development workflow
 
 ## 🤝 Contributing
 
@@ -387,7 +419,7 @@ This is a proof-of-concept project demonstrating MCP integration. Feel free to:
 
 ## 📄 License
 
-This project is created for educational and demonstration purposes.
+MIT
 
 ## 🔗 References
 
