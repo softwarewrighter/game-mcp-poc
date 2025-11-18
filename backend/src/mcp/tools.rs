@@ -2,7 +2,7 @@
 
 use super::protocol::JsonRpcError;
 use crate::game::manager::GameManager;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use shared::GameError;
 
 /// Handle the view_game_state tool call
