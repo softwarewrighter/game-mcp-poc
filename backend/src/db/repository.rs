@@ -268,11 +268,11 @@ impl GameRepository {
 
     /// Get the current active game ID (shared across all processes)
     pub fn get_current_game_id(&self) -> Result<Option<String>, GameError> {
-        let result: Result<String, _> = self.conn.query_row(
-            "SELECT game_id FROM current_game WHERE id = 1",
-            [],
-            |row| row.get(0),
-        );
+        let result: Result<String, _> =
+            self.conn
+                .query_row("SELECT game_id FROM current_game WHERE id = 1", [], |row| {
+                    row.get(0)
+                });
 
         match result {
             Ok(game_id) => Ok(Some(game_id)),

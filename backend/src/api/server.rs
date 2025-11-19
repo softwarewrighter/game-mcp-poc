@@ -2,6 +2,7 @@ use super::routes::{AppState, create_router};
 use crate::game::manager::GameManager;
 use axum::Router;
 use std::sync::{Arc, Mutex};
+use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use tracing::info;
@@ -15,8 +16,12 @@ pub async fn start_server(db_path: &str, port: u16) -> Result<(), Box<dyn std::e
     let manager =
         GameManager::new(db_path).map_err(|e| format!("Failed to create game manager: {}", e))?;
 
+    // Create SSE broadcaster (capacity: 100 events)
+    let (sse_tx, _) = broadcast::channel(100);
+
     let state = AppState {
         game_manager: Arc::new(Mutex::new(manager)),
+        sse_tx,
     };
 
     // Create CORS layer to allow frontend access
@@ -40,6 +45,11 @@ pub async fn start_server(db_path: &str, port: u16) -> Result<(), Box<dyn std::e
 
     info!("Server listening on http://{}", addr);
     info!("API available at http://{}:{}/api/game", "localhost", port);
+    info!(
+        "SSE available at http://{}:{}/api/events",
+        "localhost", port
+    );
+    info!("MCP available at http://{}:{}/mcp", "localhost", port);
     info!("Frontend available at http://{}:{}/", "localhost", port);
 
     axum::serve(listener, app).await?;

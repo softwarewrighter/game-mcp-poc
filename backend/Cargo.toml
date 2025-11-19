@@ -9,6 +9,7 @@ license.workspace = true
 shared = { path = "../shared" }
 axum.workspace = true
 tokio.workspace = true
+tokio-stream.workspace = true
 tower.workspace = true
 tower-http.workspace = true
 rusqlite.workspace = true
@@ -19,6 +20,7 @@ tracing-subscriber.workspace = true
 rand.workspace = true
 uuid.workspace = true
 thiserror.workspace = true
+futures.workspace = true
 
 [dev-dependencies]
 reqwest.workspace = true

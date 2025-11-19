@@ -44,7 +44,7 @@ pub enum GameStatus {
 }
 
 /// A single move in the game
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Move {
     pub player: Player,
     pub row: u8,
@@ -53,7 +53,7 @@ pub struct Move {
 }
 
 /// Complete game state
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GameState {
     pub id: String,
     pub board: [[Cell; 3]; 3],

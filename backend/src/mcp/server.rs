@@ -6,16 +6,39 @@ use std::io::{self, BufRead, Write};
 
 /// MCP server that handles JSON-RPC 2.0 requests via stdio
 #[allow(dead_code)] // Will be used by binary entry point
-pub struct McpServer {
-    manager: GameManager,
+pub struct McpServer<'a> {
+    manager: Option<GameManager>,
+    manager_ref: Option<&'a mut GameManager>,
 }
 
 #[allow(dead_code)] // Will be used by binary entry point
-impl McpServer {
+impl<'a> McpServer<'a> {
     /// Create a new MCP server with the given database path
     pub fn new(db_path: &str) -> Result<Self, shared::GameError> {
         let manager = GameManager::new(db_path)?;
-        Ok(Self { manager })
+        Ok(Self {
+            manager: Some(manager),
+            manager_ref: None,
+        })
+    }
+
+    /// Create a new MCP server with a reference to an existing manager
+    pub fn new_with_manager(manager: &'a mut GameManager) -> Self {
+        Self {
+            manager: None,
+            manager_ref: Some(manager),
+        }
+    }
+
+    /// Get a mutable reference to the game manager
+    fn get_manager(&mut self) -> &mut GameManager {
+        if let Some(ref mut manager) = self.manager {
+            manager
+        } else if let Some(ref mut manager) = self.manager_ref {
+            manager
+        } else {
+            unreachable!("McpServer must have either manager or manager_ref")
+        }
     }
 
     /// Run the server loop, reading from stdin and writing to stdout
@@ -34,7 +57,7 @@ impl McpServer {
     }
 
     /// Handle a single JSON-RPC request
-    fn handle_request(&mut self, json: &str) -> String {
+    pub fn handle_request(&mut self, json: &str) -> String {
         // Parse the request
         let request = match JsonRpcRequest::from_json(json) {
             Ok(req) => req,
@@ -64,13 +87,14 @@ impl McpServer {
 
     /// Dispatch a method call to the appropriate tool handler
     fn dispatch(&mut self, method: &str, params: Value) -> Result<Value, JsonRpcError> {
+        let manager = self.get_manager();
         match method {
-            "view_game_state" => tools::view_game_state(&mut self.manager, params),
-            "get_turn" => tools::get_turn(&mut self.manager, params),
-            "make_move" => tools::make_move(&mut self.manager, params),
-            "taunt_player" => tools::taunt_player(&mut self.manager, params),
-            "restart_game" => tools::restart_game(&mut self.manager, params),
-            "get_game_history" => tools::get_game_history(&mut self.manager, params),
+            "view_game_state" => tools::view_game_state(manager, params),
+            "get_turn" => tools::get_turn(manager, params),
+            "make_move" => tools::make_move(manager, params),
+            "taunt_player" => tools::taunt_player(manager, params),
+            "restart_game" => tools::restart_game(manager, params),
+            "get_game_history" => tools::get_game_history(manager, params),
             _ => Err(JsonRpcError {
                 code: METHOD_NOT_FOUND,
                 message: format!("Method '{}' not found", method),
@@ -86,7 +110,7 @@ mod tests {
     use serde_json::json;
     use uuid::Uuid;
 
-    fn create_test_server() -> McpServer {
+    fn create_test_server() -> McpServer<'static> {
         let db_path = format!("/tmp/test-server-{}.db", Uuid::new_v4());
         McpServer::new(&db_path).unwrap()
     }
