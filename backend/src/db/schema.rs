@@ -49,6 +49,19 @@ pub fn init_schema(conn: &Connection) -> Result<(), GameError> {
         message: e.to_string(),
     })?;
 
+    // Table to track the current active game (singleton pattern)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS current_game (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            game_id TEXT NOT NULL,
+            FOREIGN KEY (game_id) REFERENCES games(id)
+        )",
+        [],
+    )
+    .map_err(|e| GameError::DatabaseError {
+        message: e.to_string(),
+    })?;
+
     Ok(())
 }
 

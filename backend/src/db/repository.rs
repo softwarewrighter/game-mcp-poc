@@ -265,6 +265,38 @@ impl GameRepository {
 
         Ok(board)
     }
+
+    /// Get the current active game ID (shared across all processes)
+    pub fn get_current_game_id(&self) -> Result<Option<String>, GameError> {
+        let result: Result<String, _> = self.conn.query_row(
+            "SELECT game_id FROM current_game WHERE id = 1",
+            [],
+            |row| row.get(0),
+        );
+
+        match result {
+            Ok(game_id) => Ok(Some(game_id)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(GameError::DatabaseError {
+                message: e.to_string(),
+            }),
+        }
+    }
+
+    /// Set the current active game ID (shared across all processes)
+    pub fn set_current_game_id(&self, game_id: &str) -> Result<(), GameError> {
+        // Use INSERT OR REPLACE to ensure only one current game exists
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO current_game (id, game_id) VALUES (1, ?1)",
+                params![game_id],
+            )
+            .map_err(|e| GameError::DatabaseError {
+                message: e.to_string(),
+            })?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

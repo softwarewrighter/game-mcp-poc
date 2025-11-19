@@ -26,11 +26,19 @@ impl GameManager {
 
     /// Get the current game, or create a new one if none exists
     pub fn get_or_create_game(&mut self) -> Result<GameState, GameError> {
-        // If we have a current game ID, try to load it
-        if let Some(game_id) = &self.current_game_id
-            && let Ok(game) = self.repository.load_game(game_id)
-        {
-            return Ok(game);
+        // First, check if there's a current game ID in the database (shared across processes)
+        if let Some(game_id) = self.repository.get_current_game_id()? {
+            if let Ok(game) = self.repository.load_game(&game_id) {
+                self.current_game_id = Some(game_id);
+                return Ok(game);
+            }
+        }
+
+        // If we have a local current game ID, try to load it
+        if let Some(game_id) = &self.current_game_id {
+            if let Ok(game) = self.repository.load_game(game_id) {
+                return Ok(game);
+            }
         }
 
         // Otherwise, create a new game
@@ -54,6 +62,7 @@ impl GameManager {
         };
 
         self.repository.save_game(&game)?;
+        self.repository.set_current_game_id(&game_id)?; // Register as current game (shared across processes)
         self.current_game_id = Some(game_id);
 
         Ok(game)
