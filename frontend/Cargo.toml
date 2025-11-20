@@ -13,7 +13,8 @@ shared = { path = "../shared" }
 yew.workspace = true
 wasm-bindgen.workspace = true
 wasm-bindgen-futures = "0.4"
-web-sys = { workspace = true, features = ["EventSource", "MessageEvent"] }
+web-sys = { workspace = true, features = ["EventSource", "MessageEvent", "DragEvent", "DataTransfer", "Window", "Document", "Element", "HtmlElement"] }
+js-sys = "0.3"
 gloo.workspace = true
 gloo-net.workspace = true
 serde.workspace = true

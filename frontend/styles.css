@@ -42,10 +42,53 @@ body {
     gap: 20px;
 }
 
-h1 {
-    text-align: center;
-    color: #333;
+/* Header */
+.app-header {
+    position: relative;
     margin-bottom: 20px;
+}
+
+.header-title {
+    display: flex;
+    align-items: baseline;
+    gap: 15px;
+}
+
+h1 {
+    color: #333;
+    font-size: 2rem;
+    margin: 0;
+}
+
+.subtitle {
+    font-size: 1.2rem;
+    font-style: italic;
+    color: #667eea;
+    font-weight: 500;
+}
+
+/* GitHub Corner */
+.github-link {
+    position: absolute;
+    top: 0;
+    right: 0;
+    text-decoration: none;
+}
+
+.github-corner {
+    position: relative;
+    width: 60px;
+    height: 60px;
+}
+
+.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out;
+}
+
+@keyframes octocat-wave {
+    0%, 100% { transform: rotate(0); }
+    20%, 60% { transform: rotate(-25deg); }
+    40%, 80% { transform: rotate(10deg); }
 }
 
 .game-board-container {
@@ -109,9 +152,13 @@ h1 {
 }
 
 .game-info {
-    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
     margin: 20px 0;
     font-size: 1.2rem;
+    min-height: 40px; /* Reserve space to prevent layout shift */
 }
 
 .controls {
@@ -243,9 +290,13 @@ button:disabled {
     min-height: 300px;
     max-height: 400px;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 10px;
     background: white;
     border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    scroll-behavior: smooth;
 }
 
 .taunt-message {
@@ -270,9 +321,18 @@ button:disabled {
 }
 
 .taunt-label {
-    font-weight: bold;
-    color: #d33;
     font-size: 0.85rem;
+    cursor: help; /* Show that hover text is available */
+}
+
+.taunt-label-ui {
+    font-weight: bold;
+    color: #2563eb; /* Blue for UI player */
+}
+
+.taunt-label-mcp {
+    font-style: italic;
+    color: #d33; /* Red for MCP agent */
 }
 
 .taunt-text {
@@ -367,14 +427,45 @@ button:disabled {
     cursor: not-allowed;
 }
 
-.build-info {
-    margin-top: 15px;
-    padding: 8px;
-    text-align: center;
+/* Footer */
+.app-footer {
+    margin-top: 30px;
+    padding: 15px 0 5px 0;
+    border-top: 2px solid #eee;
+}
+
+.footer-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 5px;
+    font-size: 0.85rem;
+    color: #666;
+}
+
+.copyright {
+    font-weight: 600;
+}
+
+.separator {
+    color: #ccc;
+}
+
+.license-link {
+    color: #667eea;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.license-link:hover {
+    text-decoration: underline;
+}
+
+.build-details {
+    font-family: 'Courier New', monospace;
     font-size: 0.75rem;
     color: #999;
-    font-family: 'Courier New', monospace;
-    border-top: 1px solid #eee;
 }
 
 .turn-indicator {
@@ -414,5 +505,131 @@ button:disabled {
     }
     50% {
         opacity: 0.3;
+    }
+}
+
+/* Drag and Drop Styles */
+.board-with-mark {
+    display: flex;
+    align-items: center;
+    gap: 30px;
+    justify-content: center;
+}
+
+.draggable-mark-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.draggable-mark {
+    width: 100px;
+    height: 100px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: 3px solid #5568d3;
+    border-radius: 12px;
+    font-size: 4rem;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s;
+    user-select: none;
+}
+
+.draggable-mark.enabled {
+    cursor: grab;
+    animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+.draggable-mark.enabled:active {
+    cursor: grabbing;
+}
+
+.draggable-mark.disabled {
+    background: #ccc;
+    border-color: #999;
+    opacity: 0.5;
+    cursor: not-allowed;
+    animation: none;
+}
+
+@keyframes pulse-glow {
+    0%, 100% {
+        box-shadow: 0 0 20px rgba(102, 126, 234, 0.6), 0 0 40px rgba(118, 75, 162, 0.4);
+        transform: scale(1);
+    }
+    50% {
+        box-shadow: 0 0 30px rgba(102, 126, 234, 0.8), 0 0 60px rgba(118, 75, 162, 0.6);
+        transform: scale(1.05);
+    }
+}
+
+.drag-hint {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #667eea;
+    animation: bounce 2s ease-in-out infinite;
+}
+
+.drag-hint.disabled {
+    color: #999;
+    animation: none;
+}
+
+@keyframes bounce {
+    0%, 100% {
+        transform: translateX(0);
+    }
+    50% {
+        transform: translateX(5px);
+    }
+}
+
+.cell.drop-target {
+    border: 2px dashed #999;
+}
+
+.cell.drop-target:hover {
+    border-color: #667eea;
+    background: #e8ecff;
+    border-style: solid;
+}
+
+/* Visual feedback during drag */
+.draggable-mark.enabled:active {
+    opacity: 0.7;
+    transform: scale(0.95);
+}
+
+/* MCP Thinking Indicator */
+.mcp-thinking-indicator {
+    padding: 8px 16px;
+    background: linear-gradient(135deg, #d33 0%, #a22 100%);
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    animation: thinking-glow 0.8s ease-in-out infinite;
+    white-space: nowrap;
+}
+
+.thinking-text {
+    color: white;
+    font-size: 0.9rem;
+    font-weight: 600;
+    font-style: italic;
+}
+
+@keyframes thinking-glow {
+    0%, 100% {
+        box-shadow: 0 0 10px rgba(221, 51, 51, 0.6), 0 0 20px rgba(221, 51, 51, 0.4);
+        opacity: 1;
+    }
+    50% {
+        box-shadow: 0 0 20px rgba(221, 51, 51, 0.9), 0 0 40px rgba(221, 51, 51, 0.6);
+        opacity: 0.9;
     }
 }

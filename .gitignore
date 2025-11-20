@@ -22,6 +22,7 @@
 /pkg/
 frontend/dist/
 frontend/pkg/
+backend/dist/
 
 # IDE
 .vscode/

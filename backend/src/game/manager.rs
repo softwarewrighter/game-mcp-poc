@@ -60,6 +60,7 @@ impl GameManager {
             move_history: vec![],
             taunts: vec![],
             winning_line: None,
+            last_mcp_activity: None,
         };
 
         self.repository.save_game(&game)?;

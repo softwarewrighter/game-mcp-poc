@@ -149,7 +149,8 @@ impl GameRepository {
             status: game.4,
             move_history: moves,
             taunts,
-            winning_line: None, // Will be computed from board state
+            winning_line: None,      // Will be computed from board state
+            last_mcp_activity: None, // Not persisted to DB yet
         })
     }
 
@@ -351,6 +352,7 @@ mod tests {
             move_history: vec![],
             taunts: vec![],
             winning_line: None,
+            last_mcp_activity: None,
         }
     }
 

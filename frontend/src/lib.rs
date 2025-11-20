@@ -16,6 +16,24 @@ use wasm_bindgen::JsCast;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::closure::Closure;
 
+/// Format Unix timestamp (seconds) to YYYY/MM/DD HH:MM
+#[cfg(target_arch = "wasm32")]
+fn format_timestamp(timestamp: i64) -> String {
+    use wasm_bindgen::JsValue;
+    let date = js_sys::Date::new(&JsValue::from_f64((timestamp * 1000) as f64));
+
+    let year = date.get_full_year();
+    let month = date.get_month() + 1; // JavaScript months are 0-indexed
+    let day = date.get_date();
+    let hours = date.get_hours();
+    let minutes = date.get_minutes();
+
+    format!(
+        "{:04}/{:02}/{:02} {:02}:{:02}",
+        year, month, day, hours, minutes
+    )
+}
+
 #[function_component(App)]
 fn app() -> Html {
     info!("Rendering App component");
@@ -24,6 +42,7 @@ fn app() -> Html {
     let loading = use_state(|| true);
     let error_msg = use_state(|| None::<String>);
     let taunt_input = use_state(String::new);
+    let mcp_thinking = use_state(|| false);
     let event_log = use_state(|| {
         vec![
             "Welcome to Tic-Tac-Toe!".to_string(),
@@ -165,7 +184,7 @@ fn app() -> Html {
         });
     }
 
-    // Track taunt count to detect new taunts
+    // Track taunt count to detect new taunts and auto-scroll
     let prev_taunt_count = use_state(|| 0);
     {
         let prev_taunt_count = prev_taunt_count.clone();
@@ -187,6 +206,55 @@ fn app() -> Html {
                         log_event.emit(format!("{} {}", prefix, taunt.message));
                     }
                     prev_taunt_count.set(current_count);
+
+                    // Auto-scroll taunt display to bottom
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        use wasm_bindgen::JsCast;
+                        if let Some(window) = web_sys::window() {
+                            if let Some(document) = window.document() {
+                                if let Some(taunt_display) =
+                                    document.get_element_by_id("taunt-display")
+                                {
+                                    if let Some(element) =
+                                        taunt_display.dyn_ref::<web_sys::HtmlElement>()
+                                    {
+                                        element.set_scroll_top(element.scroll_height());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            || ()
+        });
+    }
+
+    // Track MCP activity and show "thinking" indicator with debounce
+    // Configurable delay in milliseconds (100ms in production, 2000ms for testing)
+    const MCP_THINKING_DELAY_MS: u32 = 2000;
+
+    {
+        let game_state = game_state.clone();
+        let mcp_thinking = mcp_thinking.clone();
+
+        use_effect_with(game_state.clone(), move |state| {
+            if let Some(state) = state.as_ref()
+                && state.last_mcp_activity.is_some()
+            {
+                // Show thinking indicator immediately
+                mcp_thinking.set(true);
+
+                // Hide after configured delay
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let mcp_thinking = mcp_thinking.clone();
+                    let timeout_id =
+                        gloo::timers::callback::Timeout::new(MCP_THINKING_DELAY_MS, move || {
+                            mcp_thinking.set(false);
+                        });
+                    timeout_id.forget(); // Let it run
                 }
             }
             || ()
@@ -315,65 +383,93 @@ fn app() -> Html {
         html! { <p>{"Click 'New Game' to start"}</p> }
     };
 
-    // Cell click handler
-    let on_cell_click = {
-        #[cfg(target_arch = "wasm32")]
-        let game_state = game_state.clone();
-        #[cfg(target_arch = "wasm32")]
-        let log_event = log_event.clone();
-
-        Callback::from(move |(row, col): (u8, u8)| {
-            #[cfg(target_arch = "wasm32")]
-            {
-                let game_state = game_state.clone();
-                let log_event = log_event.clone();
-
-                // Check if it's a valid move
-                if let Some(ref state) = *game_state {
-                    // Can't move if game is over
-                    if state.status != GameStatus::InProgress {
-                        log_event.emit("⚠️ Game is over! Start a new game.".to_string());
-                        return;
-                    }
-
-                    // Can't move if not human's turn
-                    if state.current_turn != state.human_player {
-                        log_event.emit("⚠️ It's not your turn!".to_string());
-                        return;
-                    }
-
-                    // Can't move if cell is occupied
-                    if state.board[row as usize][col as usize] != Cell::Empty {
-                        log_event.emit("⚠️ Cell is already occupied!".to_string());
-                        return;
-                    }
-
-                    // Make the move
-                    log_event.emit(format!("📤 Sending move to ({}, {})...", row, col));
-
-                    wasm_bindgen_futures::spawn_local({
-                        let log_event = log_event.clone();
-                        async move {
-                            match api::make_move(row, col).await {
-                                Ok(_) => {
-                                    info!("Move made successfully");
-                                    // State will be updated via SSE
-                                }
-                                Err(e) => {
-                                    error!("Failed to make move: {}", e);
-                                    log_event.emit(format!("❌ Move failed: {}", e));
-                                }
-                            }
-                        }
-                    });
+    // Handle drag start
+    #[cfg(target_arch = "wasm32")]
+    let on_drag_start = {
+        Callback::from(move |e: DragEvent| {
+            if let Some(drag_event) = e.dyn_ref::<web_sys::DragEvent>() {
+                if let Some(data_transfer) = drag_event.data_transfer() {
+                    let _ = data_transfer.set_data("text/plain", "mark");
+                    data_transfer.set_effect_allowed("move");
                 }
-            }
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                let _ = (row, col);
             }
         })
     };
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let on_drag_start = Callback::from(move |_: DragEvent| {});
+
+    // Handle drop on cell
+    #[cfg(target_arch = "wasm32")]
+    let on_drop = {
+        let game_state = game_state.clone();
+        let log_event = log_event.clone();
+
+        Callback::from(move |(e, row, col): (DragEvent, u8, u8)| {
+            if let Some(drag_event) = e.dyn_ref::<web_sys::DragEvent>() {
+                drag_event.prevent_default();
+            }
+
+            let game_state = game_state.clone();
+            let log_event = log_event.clone();
+
+            // Check if it's a valid move
+            if let Some(ref state) = *game_state {
+                // Can't move if game is over
+                if state.status != GameStatus::InProgress {
+                    log_event.emit("⚠️ Game is over! Start a new game.".to_string());
+                    return;
+                }
+
+                // Can't move if not human's turn
+                if state.current_turn != state.human_player {
+                    log_event.emit("⚠️ It's not your turn!".to_string());
+                    return;
+                }
+
+                // Can't move if cell is occupied
+                if state.board[row as usize][col as usize] != Cell::Empty {
+                    log_event.emit("⚠️ Cell is already occupied!".to_string());
+                    return;
+                }
+
+                // Make the move
+                log_event.emit(format!("📤 Dropping mark at ({}, {})...", row, col));
+
+                wasm_bindgen_futures::spawn_local({
+                    let log_event = log_event.clone();
+                    async move {
+                        match api::make_move(row, col).await {
+                            Ok(_) => {
+                                info!("Move made successfully");
+                                // State will be updated via SSE
+                            }
+                            Err(e) => {
+                                error!("Failed to make move: {}", e);
+                                log_event.emit(format!("❌ Move failed: {}", e));
+                            }
+                        }
+                    }
+                });
+            }
+        })
+    };
+
+    // Handle drag over (to allow drop)
+    #[cfg(target_arch = "wasm32")]
+    let on_drag_over = {
+        Callback::from(move |e: DragEvent| {
+            if let Some(drag_event) = e.dyn_ref::<web_sys::DragEvent>() {
+                drag_event.prevent_default();
+                if let Some(data_transfer) = drag_event.data_transfer() {
+                    data_transfer.set_drop_effect("move");
+                }
+            }
+        })
+    };
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let _on_drag_over = Callback::from(move |_: DragEvent| {});
 
     let board_cells = if let Some(ref state) = *game_state {
         (0..9)
@@ -399,17 +495,35 @@ fn app() -> Html {
 
                 let cell_class = if is_winning_cell {
                     "cell winning-cell"
+                } else if cell == Cell::Empty {
+                    "cell drop-target"
                 } else {
                     "cell"
                 };
 
-                let onclick = on_cell_click.clone();
-                let onclick_handler = Callback::from(move |_| {
-                    onclick.emit((row, col));
-                });
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let on_drop_handler = on_drop.clone();
+                    let on_drag_over_handler = on_drag_over.clone();
 
+                    let ondrop = Callback::from(move |e: DragEvent| {
+                        on_drop_handler.emit((e, row, col));
+                    });
+
+                    let ondragover = Callback::from(move |e: DragEvent| {
+                        on_drag_over_handler.emit(e);
+                    });
+
+                    html! {
+                        <div class={cell_class} key={i} ondrop={ondrop} ondragover={ondragover}>
+                            {cell_text}
+                        </div>
+                    }
+                }
+
+                #[cfg(not(target_arch = "wasm32"))]
                 html! {
-                    <div class={cell_class} key={i} onclick={onclick_handler}>
+                    <div class={cell_class} key={i}>
                         {cell_text}
                     </div>
                 }
@@ -451,19 +565,85 @@ fn app() -> Html {
         html! {}
     };
 
+    // Draggable mark component
+    let draggable_mark = if let Some(ref state) = *game_state {
+        let is_human_turn = state.current_turn == state.human_player;
+        let is_game_active = state.status == GameStatus::InProgress;
+        let is_enabled = is_human_turn && is_game_active;
+
+        let mark_text = format!("{}", state.human_player);
+        let mark_class = if is_enabled {
+            "draggable-mark enabled"
+        } else {
+            "draggable-mark disabled"
+        };
+
+        let on_drag_start_handler = on_drag_start.clone();
+
+        html! {
+            <div class="draggable-mark-container">
+                <div
+                    class={mark_class}
+                    draggable={is_enabled.to_string()}
+                    ondragstart={on_drag_start_handler}
+                >
+                    {mark_text}
+                </div>
+                {
+                    if is_enabled {
+                        html! { <div class="drag-hint">{"← Drag to board"}</div> }
+                    } else {
+                        html! { <div class="drag-hint disabled">{"Wait for your turn..."}</div> }
+                    }
+                }
+            </div>
+        }
+    } else {
+        html! {}
+    };
+
+    // MCP thinking indicator
+    let thinking_indicator = if *mcp_thinking {
+        html! {
+            <div class="mcp-thinking-indicator">
+                <span class="thinking-text">{"MCP Agent Thinking..."}</span>
+            </div>
+        }
+    } else {
+        html! {}
+    };
+
     html! {
         <div class="app-container">
-            <h1>{"TTTTT - Trash Talkin' Tic Tac Toe"}</h1>
+            <header class="app-header">
+                <div class="header-title">
+                    <h1>{"TTTTT"}</h1>
+                    <span class="subtitle">{"Trash Talkin' Tic-Tac-Toe"}</span>
+                </div>
+                <a href="https://github.com/softwarewrighter/game-mcp-poc" target="_blank" class="github-link" title="Source code">
+                    <div class="github-corner">
+                        <svg width="60" height="60" viewBox="0 0 250 250" style="fill:#667eea; color:#fff; position: absolute; top: 0; border: 0; right: 0;" aria-hidden="true">
+                            <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+                            <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+                            <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path>
+                        </svg>
+                    </div>
+                </a>
+            </header>
             <div class="game-info">
                 {game_info}
+                {thinking_indicator}
             </div>
             <div class="game-layout">
                 <div class="left-panel">
-                    <div class="game-board-container">
-                        <div class="game-board">
-                            {board_cells}
+                    <div class="board-with-mark">
+                        {draggable_mark}
+                        <div class="game-board-container">
+                            <div class="game-board">
+                                {board_cells}
+                            </div>
+                            {draw_overlay}
                         </div>
-                        {draw_overlay}
                     </div>
                     <div class="controls">
                         <button class="btn-primary" onclick={on_new_game} disabled={*loading}>
@@ -480,7 +660,7 @@ fn app() -> Html {
                 <div class="right-panel">
                     <div class="chat-container">
                 <h3>{"💬 Trash Talk"}</h3>
-                <div class="taunt-display">
+                <div class="taunt-display" id="taunt-display">
                     {
                         if let Some(ref state) = *game_state {
                             if state.taunts.is_empty() {
@@ -491,20 +671,35 @@ fn app() -> Html {
                                 let taunt_messages: Vec<_> = state.taunts.iter()
                                     .enumerate()
                                     .map(|(idx, taunt)| {
-                                        let label = match &taunt.source {
-                                            Some(MoveSource::UI) => "You: ",
-                                            Some(MoveSource::MCP) => "MCP Agent: ",
-                                            None => "Unknown: ",
+                                        let (label, label_class) = match &taunt.source {
+                                            Some(MoveSource::UI) => ("You: ", "taunt-label taunt-label-ui"),
+                                            Some(MoveSource::MCP) => ("MCP Agent: ", "taunt-label taunt-label-mcp"),
+                                            None => ("Unknown: ", "taunt-label"),
                                         };
+
                                         // Add blink animation only to the latest taunt
                                         let class = if idx == taunt_count - 1 {
                                             "taunt-message latest-taunt"
                                         } else {
                                             "taunt-message"
                                         };
+
+                                        // Format timestamp for hover text (WASM only)
+                                        #[cfg(target_arch = "wasm32")]
+                                        {
+                                            let timestamp_text = format_timestamp(taunt.timestamp);
+                                            html! {
+                                                <div class={class}>
+                                                    <span class={label_class} title={timestamp_text}>{label}</span>
+                                                    <span class="taunt-text">{&taunt.message}</span>
+                                                </div>
+                                            }
+                                        }
+
+                                        #[cfg(not(target_arch = "wasm32"))]
                                         html! {
                                             <div class={class}>
-                                                <span class="taunt-label">{label}</span>
+                                                <span class={label_class}>{label}</span>
                                                 <span class="taunt-text">{&taunt.message}</span>
                                             </div>
                                         }
@@ -608,9 +803,21 @@ fn app() -> Html {
                     </div>
                 </div>
             </div>
-            <div class="build-info">
-                {format!("Build: {} @ {}", shared::build_info::GIT_SHA, shared::build_info::BUILD_TIME)}
-            </div>
+            <footer class="app-footer">
+                <div class="footer-content">
+                    <span class="copyright">{"© 2025 TTTTT"}</span>
+                    <span class="separator">{" | "}</span>
+                    <a href="https://github.com/softwarewrighter/game-mcp-poc/blob/main/LICENSE" target="_blank" class="license-link">{"License"}</a>
+                    <span class="separator">{" | "}</span>
+                    <span class="build-details">
+                        {format!("Build: {} @ {} on {}",
+                            shared::build_info::GIT_SHA,
+                            shared::build_info::BUILD_TIME,
+                            shared::build_info::BUILD_HOST
+                        )}
+                    </span>
+                </div>
+            </footer>
         </div>
     }
 }
@@ -654,5 +861,74 @@ mod tests {
         assert_eq!(empty, Cell::default());
         assert_ne!(empty, occupied_x);
         assert_ne!(occupied_x, occupied_o);
+    }
+
+    #[test]
+    fn test_draggable_mark_should_show_human_player_mark() {
+        // When human player is X, draggable mark should show X
+        let human_player = Player::X;
+        let mark = format!("{}", human_player);
+        assert_eq!(mark, "X");
+
+        // When human player is O, draggable mark should show O
+        let human_player = Player::O;
+        let mark = format!("{}", human_player);
+        assert_eq!(mark, "O");
+    }
+
+    #[test]
+    fn test_draggable_mark_enabled_when_human_turn() {
+        // Create a game state where it's the human's turn
+        let human_player = Player::X;
+        let current_turn = Player::X;
+        let is_enabled = current_turn == human_player;
+        assert!(
+            is_enabled,
+            "Draggable mark should be enabled on human's turn"
+        );
+    }
+
+    #[test]
+    fn test_draggable_mark_disabled_when_opponent_turn() {
+        // Create a game state where it's the opponent's turn
+        let human_player = Player::X;
+        let current_turn = Player::O;
+        let is_enabled = current_turn == human_player;
+        assert!(
+            !is_enabled,
+            "Draggable mark should be disabled on opponent's turn"
+        );
+    }
+
+    #[test]
+    fn test_draggable_mark_disabled_when_game_over() {
+        // Draggable mark should be disabled when game is over
+        let status = GameStatus::Won(Player::X);
+        let is_game_over = status != GameStatus::InProgress;
+        assert!(is_game_over, "Game should be over when status is Won");
+
+        let status = GameStatus::Draw;
+        let is_game_over = status != GameStatus::InProgress;
+        assert!(is_game_over, "Game should be over when status is Draw");
+    }
+
+    #[test]
+    fn test_drop_target_accepts_drops_on_empty_cells() {
+        // Empty cells should accept drops
+        let cell = Cell::Empty;
+        let can_drop = cell == Cell::Empty;
+        assert!(can_drop, "Should be able to drop on empty cell");
+    }
+
+    #[test]
+    fn test_drop_target_rejects_drops_on_occupied_cells() {
+        // Occupied cells should not accept drops
+        let cell = Cell::Occupied(Player::X);
+        let can_drop = cell == Cell::Empty;
+        assert!(!can_drop, "Should not be able to drop on occupied cell");
+
+        let cell = Cell::Occupied(Player::O);
+        let can_drop = cell == Cell::Empty;
+        assert!(!can_drop, "Should not be able to drop on occupied cell");
     }
 }

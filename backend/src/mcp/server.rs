@@ -88,6 +88,7 @@ impl<'a> McpServer<'a> {
     /// Dispatch a method call to the appropriate tool handler
     fn dispatch(&mut self, method: &str, params: Value) -> Result<Value, JsonRpcError> {
         let manager = self.get_manager();
+
         match method {
             "view_game_state" => tools::view_game_state(manager, params),
             "get_turn" => tools::get_turn(manager, params),

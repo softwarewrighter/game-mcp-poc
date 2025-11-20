@@ -94,6 +94,8 @@ pub struct GameState {
     pub taunts: Vec<Taunt>,
     #[serde(default)]
     pub winning_line: Option<WinningLine>,
+    #[serde(default)]
+    pub last_mcp_activity: Option<i64>,
 }
 
 /// API request to make a move

@@ -180,18 +180,22 @@ async fn mcp_handler(
     let response: serde_json::Value =
         serde_json::from_str(&response_str).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // If the MCP call modified the game state, broadcast it
-    // (We check if it's a successful result for state-modifying methods)
+    // If the MCP call was successful, update last_mcp_activity and broadcast
     if let Some(result) = response.get("result")
         && !result.is_null()
     {
-        let method = rpc_request.method.as_str();
-        if matches!(method, "make_move" | "restart_game" | "taunt_player") {
-            // Fetch updated state and broadcast
-            let mut manager = state.game_manager.lock().unwrap();
-            if let Ok(game_state) = manager.get_game_state() {
-                broadcast_state(&state, &game_state);
-            }
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let mut manager = state.game_manager.lock().unwrap();
+        if let Ok(mut game_state) = manager.get_game_state() {
+            // Update the timestamp (in-memory only)
+            game_state.last_mcp_activity = Some(timestamp);
+
+            // Broadcast the updated state with the MCP activity timestamp
+            broadcast_state(&state, &game_state);
         }
     }
 
