@@ -4,11 +4,15 @@ The Model Context Protocol (MCP) integration enables AI agents to interact with 
 
 ## MCP Overview
 
-**Model Context Protocol** is a standardized way for AI models to interact with external tools and services. It uses JSON-RPC for communication and provides a schema-driven approach to tool discovery and invocation.
+**Model Context Protocol** is a standardized way for AI models to interact with external tools and services. It uses JSON-RPC 2.0 for communication and provides a schema-driven approach to tool discovery and invocation.
+
+The TTTTT server supports **dual MCP transports**:
+- **HTTP transport**: `/mcp` endpoint on port 3000 (for OpenAI, Gemini, custom agents)
+- **Stdio transport**: Binary for Claude Desktop integration
 
 ```mermaid
 graph LR
-    A[AI Agent<br/>Claude/GPT] -->|JSON-RPC| B[MCP Server<br/>Port 3001]
+    A[AI Agent<br/>OpenAI/Gemini/Claude] -->|HTTP POST /mcp| B[MCP Server<br/>Port 3000]
     B -->|Tool Calls| C[Game Logic]
     C -->|State Updates| D[(SQLite DB)]
     D -->|State| C
@@ -28,27 +32,24 @@ graph LR
 ```mermaid
 sequenceDiagram
     participant Agent as AI Agent
-    participant MCP as MCP Server
+    participant MCP as MCP Server<br/>(HTTP /mcp)
     participant Logic as Game Logic
     participant DB as Database
 
-    Agent->>MCP: Connect (TCP 3001)
-    MCP->>Agent: Connection Established
+    Agent->>MCP: POST /mcp (initialize)
+    MCP->>Agent: Protocol info + capabilities
 
-    Agent->>MCP: list_tools
+    Agent->>MCP: POST /mcp (tools/list)
     MCP->>Agent: Tool Definitions (JSON Schema)
 
     loop Game Session
-        Agent->>MCP: call_tool(tool_name, params)
+        Agent->>MCP: POST /mcp (method: tool_name)
         MCP->>Logic: Execute Game Operation
         Logic->>DB: Read/Write State
         DB->>Logic: State Data
         Logic->>MCP: Operation Result
-        MCP->>Agent: Tool Result (JSON)
+        MCP->>Agent: JSON-RPC Response
     end
-
-    Agent->>MCP: Disconnect
-    MCP->>Agent: Connection Closed
 ```
 
 ### Message Format
@@ -58,13 +59,10 @@ sequenceDiagram
 {
   "jsonrpc": "2.0",
   "id": 1,
-  "method": "tools/call",
+  "method": "make_move",
   "params": {
-    "name": "make_move",
-    "arguments": {
-      "row": 1,
-      "col": 2
-    }
+    "row": 1,
+    "col": 2
   }
 }
 ```
@@ -75,18 +73,26 @@ sequenceDiagram
   "jsonrpc": "2.0",
   "id": 1,
   "result": {
-    "content": [
-      {
-        "type": "text",
-        "text": "Move successful: AI (O) placed at (1, 2)"
-      }
-    ],
-    "isError": false
+    "success": true,
+    "message": "Move made successfully",
+    "gameState": {
+      "board": [...],
+      "currentTurn": "X",
+      "status": "InProgress"
+    }
   }
 }
 ```
 
 ## Available Tools
+
+The MCP server provides 8 methods:
+
+### Protocol Methods
+- **initialize**: MCP protocol handshake, returns protocol version and capabilities
+- **tools/list**: Returns JSON schemas for all available tools
+
+### Game Tools (6 total)
 
 ### 1. view_game_state
 
@@ -108,22 +114,31 @@ View the current state of the game board.
 **Example Call:**
 ```json
 {
-  "method": "tools/call",
-  "params": {
-    "name": "view_game_state",
-    "arguments": {}
-  }
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "view_game_state",
+  "params": {}
 }
 ```
 
 **Example Response:**
 ```json
 {
+  "jsonrpc": "2.0",
+  "id": 3,
   "result": {
-    "content": [{
-      "type": "text",
-      "text": "Board:\n  X | O |  \n -----------\n  X |   | O\n -----------\n    |   |  \n\nStatus: In Progress\nCurrent Turn: X (Human)\nAI Player: O"
-    }]
+    "id": "abc123",
+    "board": [
+      [{"Occupied": "X"}, {"Occupied": "O"}, "Empty"],
+      [{"Occupied": "X"}, "Empty", {"Occupied": "O"}],
+      ["Empty", "Empty", "Empty"]
+    ],
+    "currentTurn": "X",
+    "humanPlayer": "X",
+    "aiPlayer": "O",
+    "status": "InProgress",
+    "moveHistory": [...],
+    "taunts": [...]
   }
 }
 ```
@@ -552,24 +567,43 @@ graph TD
 
 ## Testing MCP Tools
 
-### Manual Testing with netcat
+### Manual Testing with curl
 
 ```bash
-# Connect to MCP server
-nc localhost 3001
+# Initialize protocol
+curl -X POST http://localhost:3000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"initialize","params":{},"id":1}' | jq
 
 # List available tools
-{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}
+curl -X POST http://localhost:3000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"tools/list","params":{},"id":2}' | jq
 
 # View game state
-{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"view_game_state","arguments":{}}}
+curl -X POST http://localhost:3000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"view_game_state","params":{},"id":3}' | jq
 
 # Make a move
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"make_move","arguments":{"row":1,"col":1}}}
+curl -X POST http://localhost:3000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"make_move","params":{"row":1,"col":1},"id":4}' | jq
 
 # Send a taunt
-{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"taunt_player","arguments":{"message":"Nice try!"}}}
+curl -X POST http://localhost:3000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"taunt_player","params":{"message":"Nice try!"},"id":5}' | jq
 ```
+
+### AI Agent Examples
+
+See the `examples/` directory for working integrations:
+- **OpenAI GPT-4**: `examples/openai_agent.py`
+- **Google Gemini**: `examples/gemini_agent.py`
+- **Claude Desktop**: `examples/claude-desktop-config.json`
+
+Complete setup guide: [examples/README.md](https://github.com/softwarewrighter/game-mcp-poc/blob/main/examples/README.md)
 
 ### Integration Tests
 
@@ -651,9 +685,21 @@ MCP server configuration (environment variables):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MCP_PORT` | `3001` | TCP port for MCP server |
-| `MCP_HOST` | `127.0.0.1` | Host to bind to |
-| `MCP_TIMEOUT` | `30` | Connection timeout (seconds) |
+| `PORT` | `3000` | HTTP server port (REST + MCP) |
+| `GAME_DB_PATH` | `game.db` | SQLite database file path |
+| `RUST_LOG` | `info` | Log level (error/warn/info/debug/trace) |
+
+### Dual Transport Support
+
+**HTTP Transport** (port 3000):
+- Endpoint: `POST /mcp`
+- Content-Type: `application/json`
+- Used by: OpenAI, Gemini, custom HTTP agents
+
+**Stdio Transport** (binary):
+- Command: `./target/release/game-mcp-server`
+- Transport: stdin/stdout
+- Used by: Claude Desktop (native MCP support)
 
 ## Related Pages
 

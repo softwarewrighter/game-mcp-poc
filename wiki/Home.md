@@ -4,7 +4,9 @@ Welcome to the Tic-Tac-Toe MCP Proof-of-Concept documentation wiki!
 
 ## Overview
 
-This project demonstrates a dual-interface tic-tac-toe game that can be played by both humans (via web UI) and AI agents (via Model Context Protocol). The system showcases modern Rust development practices, WebAssembly frontend technology, and AI-agent integration patterns.
+This project demonstrates a **production-ready** dual-interface tic-tac-toe game with trash talk that can be played by both humans (via web UI) and AI agents (via Model Context Protocol). The system showcases modern Rust development practices, WebAssembly frontend technology, real-time updates via Server-Sent Events, and AI-agent integration patterns.
+
+**Status**: ✅ Production Ready - 181 tests passing, full feature set implemented
 
 ### Quick Links
 
@@ -19,6 +21,9 @@ This project demonstrates a dual-interface tic-tac-toe game that can be played b
 - [Product Requirements (PRD)](https://github.com/softwarewrighter/game-mcp-poc/blob/main/docs/prd.md)
 - [Detailed Design Specification](https://github.com/softwarewrighter/game-mcp-poc/blob/main/docs/design.md)
 - [Development Process & TDD Guide](https://github.com/softwarewrighter/game-mcp-poc/blob/main/docs/process.md)
+- [Project Status](https://github.com/softwarewrighter/game-mcp-poc/blob/main/docs/status.md)
+- [AI Agent Examples](https://github.com/softwarewrighter/game-mcp-poc/blob/main/examples/README.md)
+- [Online Deployment Plan](https://github.com/softwarewrighter/game-mcp-poc/blob/main/docs/online-plan.md)
 - [Claude AI Instructions](https://github.com/softwarewrighter/game-mcp-poc/blob/main/CLAUDE.md)
 
 ## System Architecture
@@ -60,26 +65,32 @@ graph TB
 |-------|------------|
 | Frontend | Yew + WebAssembly (Rust) |
 | Backend | Axum + Rust 2024 |
-| Database | SQLite (file-based) |
-| Protocol | REST API + MCP |
-| Testing | cargo test + wasm-bindgen-test |
+| Database | SQLite (file-based, WAL mode) |
+| Protocol | REST API + MCP (HTTP + stdio) |
+| Real-time | Server-Sent Events (SSE) |
+| Testing | cargo test + wasm-bindgen-test (181 tests) |
 | Logging | tracing + console_log |
 
 ## Key Features
 
 ### For Human Players
-- Interactive web-based game board
-- Real-time game state updates
+- Interactive web-based game board with drag-and-drop
+- Real-time game state updates via SSE
+- Trash talk input panel
+- Live taunt display from AI opponents
+- MCP "thinking" indicator
 - Scrollable event log
-- Restart and quit controls
-- Taunt messages from AI opponent
+- Restart controls
+- GitHub corner link
+- Build info footer
 
 ### For AI Agents
-- View game state via MCP tools
-- Make moves through structured tool calls
-- Send taunt messages to players
-- Restart games programmatically
-- Access move history
+- **HTTP MCP endpoint** at `POST /mcp` (OpenAI, Gemini, custom agents)
+- **Stdio MCP binary** (Claude Desktop native support)
+- Protocol discovery (`initialize`, `tools/list`)
+- 6 game tools (view_game_state, get_turn, make_move, taunt_player, restart_game, get_game_history)
+- Working examples for OpenAI GPT-4, Google Gemini, Claude Desktop
+- Complete setup documentation
 
 ## Development Workflow
 
@@ -117,9 +128,15 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 ```
 game-mcp-poc/
-├── backend/          # Rust server (REST + MCP + game logic)
+├── backend/          # Rust server (REST + MCP + SSE + game logic)
+│   └── src/
+│       ├── api/      # HTTP endpoints, SSE, MCP HTTP handler
+│       ├── game/     # Game logic and state management
+│       ├── db/       # SQLite persistence layer
+│       └── mcp/      # MCP protocol and tools
 ├── frontend/         # Yew/WASM web interface
 ├── shared/           # Common types (Player, Cell, GameState)
+├── examples/         # AI agent integration examples
 ├── scripts/          # Build and development scripts
 ├── docs/             # Detailed documentation
 └── wiki/             # This wiki content

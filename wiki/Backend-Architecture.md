@@ -1,9 +1,12 @@
 # Backend Architecture
 
-The backend is a Rust-based server that provides three key functions:
+The backend is a Rust-based server that provides four key functions:
 1. REST API for web UI communication
-2. MCP server for AI agent integration
-3. Static file serving for the WASM frontend
+2. MCP HTTP endpoint for AI agent integration
+3. Server-Sent Events (SSE) for real-time updates
+4. Static file serving for the WASM frontend
+
+The system supports **dual MCP transports**: HTTP (port 3000) and stdio (binary for Claude Desktop).
 
 ## Module Structure
 
@@ -26,11 +29,14 @@ graph TB
         subgraph "api/"
             Routes[routes.rs<br/>Endpoint Definitions]
             Handlers[handlers.rs<br/>Request Processing]
+            McpHandler[mcp_handler.rs<br/>HTTP MCP Endpoint]
+            Server[server.rs<br/>Axum Server Setup]
         end
 
         subgraph "mcp/"
-            Server[server.rs<br/>MCP Protocol Handler]
+            McpServer[server.rs<br/>MCP Protocol Handler]
             Tools[tools.rs<br/>Tool Implementations]
+            Protocol[protocol.rs<br/>JSON-RPC 2.0]
         end
 
         Main --> Board
@@ -75,20 +81,23 @@ async fn main() {
     // Initialize game state
     repo.init_schema()?;
 
+    // Create SSE broadcaster
+    let (sse_tx, _) = broadcast::channel(100);
+
     // Build Axum router
     let app = Router::new()
         .route("/api/game/state", get(handlers::get_game_state))
         .route("/api/game/move", post(handlers::make_move))
         .route("/api/game/restart", post(handlers::restart_game))
         .route("/api/game/history", get(handlers::get_history))
-        .route("/api/taunts", get(handlers::get_taunts))
-        .nest_service("/", ServeDir::new("dist"))
-        .layer(Extension(repo.clone()));
+        .route("/api/taunts", post(handlers::send_taunt))
+        .route("/sse", get(handlers::sse_handler))
+        .route("/mcp", post(mcp_handler::handle_mcp_request))
+        .nest_service("/", ServeDir::new("frontend/dist"))
+        .layer(Extension(repo.clone()))
+        .layer(Extension(sse_tx));
 
-    // Start MCP server (concurrent with HTTP)
-    tokio::spawn(mcp::start_server(repo.clone()));
-
-    // Start HTTP server
+    // Start HTTP server (serves REST + MCP + SSE + static files)
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
@@ -99,10 +108,16 @@ async fn main() {
 **Responsibilities:**
 - Configure tracing/logging
 - Initialize database connection pool
-- Set up HTTP routes
-- Launch MCP server in background task
+- Create SSE broadcast channel
+- Set up HTTP routes (REST + MCP + SSE)
 - Serve static WASM files
 - Handle graceful shutdown
+
+**Key Updates:**
+- Single HTTP server on port 3000 handles all traffic
+- SSE for real-time updates to frontend
+- MCP HTTP endpoint at `/mcp` for AI agents
+- Separate stdio MCP binary for Claude Desktop
 
 ### 2. Game Logic Module
 
@@ -405,38 +420,63 @@ graph LR
 
 ### 5. MCP Module
 
-#### `server.rs` - MCP Protocol Handler
+#### `server.rs` - MCP Protocol Handler (Stdio)
 
-Implements JSON-RPC protocol for Model Context Protocol:
+Implements JSON-RPC protocol for stdio transport (used by Claude Desktop):
 
 ```rust
-pub async fn start_server(repo: Arc<dyn GameRepository>) {
-    let listener = TcpListener::bind("127.0.0.1:3001").await?;
-
-    loop {
-        let (stream, _) = listener.accept().await?;
-        let repo = repo.clone();
-
-        tokio::spawn(async move {
-            handle_connection(stream, repo).await;
-        });
-    }
+pub struct McpServer {
+    manager: GameManager,
 }
 
-async fn handle_connection(stream: TcpStream, repo: Arc<dyn GameRepository>) {
-    let (read, write) = stream.into_split();
-    let reader = BufReader::new(read);
-    let mut writer = BufWriter::new(write);
-
-    let mut lines = reader.lines();
-    while let Some(line) = lines.next_line().await? {
-        let request: JsonRpcRequest = serde_json::from_str(&line)?;
-        let response = handle_request(request, &repo).await;
-        let json = serde_json::to_string(&response)?;
-        writer.write_all(json.as_bytes()).await?;
-        writer.write_all(b"\n").await?;
-        writer.flush().await?;
+impl McpServer {
+    pub fn new(db_path: &str) -> Result<Self> {
+        let manager = GameManager::new(db_path)?;
+        Ok(Self { manager })
     }
+
+    /// Run stdio server loop
+    pub fn run(&mut self) -> io::Result<()> {
+        let stdin = io::stdin();
+        let mut stdout = io::stdout();
+
+        for line in stdin.lock().lines() {
+            let line = line?;
+            let response = self.handle_request(&line);
+            writeln!(stdout, "{}", response)?;
+            stdout.flush()?;
+        }
+        Ok(())
+    }
+
+    fn handle_request(&mut self, json: &str) -> String {
+        // Parse JSON-RPC request
+        // Dispatch to appropriate tool
+        // Return JSON-RPC response
+    }
+}
+```
+
+#### `mcp_handler.rs` - HTTP MCP Endpoint
+
+Handles HTTP POST requests to `/mcp`:
+
+```rust
+pub async fn handle_mcp_request(
+    Extension(manager): Extension<Arc<Mutex<GameManager>>>,
+    Extension(sse_tx): Extension<broadcast::Sender<SseEvent>>,
+    Json(request): Json<JsonRpcRequest>,
+) -> Json<JsonRpcResponse> {
+    // Broadcast MCP activity start
+    let _ = sse_tx.send(SseEvent::McpActivityStart);
+
+    // Dispatch to MCP tools
+    let response = dispatch_mcp_request(manager, request).await;
+
+    // Broadcast MCP activity end
+    let _ = sse_tx.send(SseEvent::McpActivityEnd);
+
+    Json(response)
 }
 ```
 
@@ -481,11 +521,13 @@ Environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DB_PATH` | `game.db` | SQLite database file path |
-| `HTTP_PORT` | `3000` | HTTP server port |
-| `MCP_PORT` | `3001` | MCP server port |
+| `GAME_DB_PATH` | `game.db` | SQLite database file path |
+| `PORT` | `3000` | HTTP server port (REST + MCP + SSE) |
 | `RUST_LOG` | `info` | Log level (error/warn/info/debug/trace) |
-| `STATIC_DIR` | `dist` | Frontend build output directory |
+
+**Dual MCP Transport:**
+- **HTTP**: `POST /mcp` on port 3000 (for OpenAI, Gemini, HTTP agents)
+- **Stdio**: `./target/release/game-mcp-server` binary (for Claude Desktop)
 
 ## Testing Strategy
 

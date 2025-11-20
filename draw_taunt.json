@@ -1,0 +1,8 @@
+{
+  "jsonrpc": "2.0",
+  "method": "taunt_player",
+  "params": {
+    "message": "A draw?! You survived by sheer luck. Next time I won't be so merciful!"
+  },
+  "id": 7
+}

@@ -1,0 +1,8 @@
+{
+  "jsonrpc": "2.0",
+  "method": "taunt_player",
+  "params": {
+    "message": "Center square won't save you. I control the corners now!"
+  },
+  "id": 4
+}

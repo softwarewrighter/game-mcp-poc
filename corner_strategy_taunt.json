@@ -1,0 +1,8 @@
+{
+  "jsonrpc": "2.0",
+  "method": "taunt_player",
+  "params": {
+    "message": "Corner control is mine! Can you see the trap closing in?"
+  },
+  "id": 10
+}

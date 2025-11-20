@@ -1,0 +1,8 @@
+{
+  "jsonrpc": "2.0",
+  "method": "taunt_player",
+  "params": {
+    "message": "Blocked! I see your every move before you make it!"
+  },
+  "id": 7
+}
