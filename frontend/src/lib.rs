@@ -805,7 +805,7 @@ fn app() -> Html {
             </div>
             <footer class="app-footer">
                 <div class="footer-content">
-                    <span class="copyright">{"© 2025 TTTTT"}</span>
+                    <span class="copyright">{"© 2025 Michael A. Wright"}</span>
                     <span class="separator">{" | "}</span>
                     <a href="https://github.com/softwarewrighter/game-mcp-poc/blob/main/LICENSE" target="_blank" class="license-link">{"License"}</a>
                     <span class="separator">{" | "}</span>
